@@ -1,0 +1,42 @@
+# config/config.yaml
+
+target:
+  domain: "dell.com"
+  program_name: "dell_bounty"
+  headers:
+    X-Bug-Bounty: "Bugcrowd-Dbeny101"
+
+scope:
+  rules:
+    - pattern: "*.dell.com/*"
+      status: allow
+    - pattern: "*.delltechnologies.com/*"
+      status: allow
+    - pattern: "educate.dell.com"
+      status: deny
+    - pattern: "console.dell.com"
+      status: deny
+    - pattern: "console-test.dell.com"
+      status: deny
+    - pattern: "salesproductivity.dell.com"
+      status: deny
+    - pattern: "console.delltechnologies.com"
+      status: deny
+    - pattern: "console.delltechnologies.com/nav/administration"
+      status: allow
+    - pattern: "console.delltechnologies.com/nav/invoice"
+      status: allow
+    - pattern: "console.delltechnologies.com/nav/billing"
+      status: allow
+
+tools:
+  subfinder: "subfinder"
+  httpx: "httpx"
+  katana: "katana"
+
+rate_limit:
+  requests_per_second: 10
+  timeout_seconds: 10
+
+output:
+  base_dir: "data"

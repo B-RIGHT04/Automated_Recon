@@ -1,0 +1,30 @@
+# Virtual environment - machine-specific, rebuild with:
+#   python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Recon output data - subdomains, live hosts, crawled URLs, stored response
+# bodies. Often sensitive/program-specific; keep local unless you deliberately
+# decide a given engagement's data is safe to publish.
+data/
+
+# Config - may contain program-identifying headers (e.g. X-Bug-Bounty value)
+# or, in future, real API keys/tokens. Uncomment if you don't want config.yaml
+# itself in the repo, and commit a config.yaml.example instead:
+# config/config.yaml
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
