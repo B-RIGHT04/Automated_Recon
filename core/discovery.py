@@ -6,6 +6,7 @@ to a list of crawled URLs, respecting scope and configured rate limits.
 """
 import subprocess
 import os
+import json
 import shlex
 from core.scope import enforce_scope, is_in_scope, load_config
 
@@ -116,6 +117,15 @@ def run_httpx(subdomains_file, config):
     out_dir = os.path.join(config["output"]["base_dir"], program, "live_hosts")
     _ensure_dir(out_dir)
     out_file = os.path.join(out_dir, "live.txt")
+    # Session 10 addition: httpx now runs with tech-detection enabled, writing
+    # JSON-lines output instead of a plain URL list. This is parsed below into
+    # two separate files: `live.txt` stays a plain URL list (unchanged format,
+    # so run_katana()'s `-list` input and is_in_scope() keep working exactly
+    # as before), and a new `tech_report.json` captures the fingerprinting
+    # data for reporting. Field names (`url`, `tech`, `webserver`, etc.)
+    # confirmed directly against a live httpx v1.10.0 JSON response rather
+    # than assumed from docs, which don't document the schema.
+    raw_json_file = os.path.join(out_dir, "httpx_raw.json")
     tool = config["tools"]["httpx"]
     rate = config["rate_limit"]["requests_per_second"]
     timeout = config["rate_limit"]["timeout_seconds"]
@@ -124,11 +134,47 @@ def run_httpx(subdomains_file, config):
         f"{shlex.quote(tool)} -l {shlex.quote(verified_file)} "
         f"-rate-limit {shlex.quote(str(rate))} "
         f"-timeout {shlex.quote(str(timeout))} {headers} "
-        f"-silent -o {shlex.quote(out_file)}"
+        f"-silent -td -json -o {shlex.quote(raw_json_file)}"
     )
     _run_command(cmd, "Running httpx to filter live hosts")
-    with open(out_file, "r") as f:
-        count = sum(1 for line in f if line.strip())
+
+    tech_dir = os.path.join(config["output"]["base_dir"], program, "tech")
+    _ensure_dir(tech_dir)
+    tech_report_file = os.path.join(tech_dir, "tech_report.json")
+
+    urls = []
+    tech_entries = []
+    malformed = 0
+    if os.path.exists(raw_json_file):
+        with open(raw_json_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    malformed += 1
+                    continue
+                url = record.get("url")
+                if url:
+                    urls.append(url)
+                tech_entries.append({
+                    "url": url,
+                    "webserver": record.get("webserver"),
+                    "tech": record.get("tech", []),
+                    "status_code": record.get("status_code"),
+                    "title": record.get("title"),
+                })
+    if malformed:
+        print(f"[!] Skipped {malformed} malformed JSON line(s) from httpx output")
+
+    with open(out_file, "w") as f:
+        f.write("\n".join(urls) + "\n")
+    with open(tech_report_file, "w") as f:
+        json.dump(tech_entries, f, indent=2)
+
+    count = len(urls)
     if count == 0:
         raise RuntimeError(
             f"httpx found 0 live hosts out of {len(hosts)} candidate(s). This can "
