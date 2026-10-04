@@ -112,11 +112,24 @@ SERVICES = {
 
 
 def _get_cname(host):
-    """Returns the CNAME target for host, or None if it has none / dig fails."""
-    result = subprocess.run(
-        ["dig", "+short", "CNAME", host],
-        capture_output=True, text=True, timeout=15,
-    )
+    """Returns the CNAME target for host, or None if it has none / dig fails
+    or times out. Across tens of thousands of hosts, some lookups WILL hang
+    or fail -- that must never take down the whole run, so every failure
+    mode here is swallowed and treated as "no CNAME found" rather than
+    raised. Timeouts/failures are counted by the caller for visibility."""
+    try:
+        result = subprocess.run(
+            ["dig", "+short", "CNAME", host],
+            capture_output=True, text=True, timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    except OSError:
+        # dig not found / failed to launch -- shouldn't happen mid-run since
+        # run_subfinder etc. already depend on similar tools, but don't crash
+        return None
+    if result.returncode != 0:
+        return None
     lines = [l.strip().rstrip(".") for l in result.stdout.splitlines() if l.strip()]
     return lines[-1] if lines else None  # last line = final CNAME in any chain
 
@@ -181,15 +194,22 @@ def run_takeover_check(subdomains_file=None, config=None):
         hosts = [line.strip() for line in f if line.strip()]
 
     candidates = []
-    for host in hosts:
+    no_cname_count = 0
+    total = len(hosts)
+    for i, host in enumerate(hosts, 1):
         cname = _get_cname(host)
         if not cname:
-            continue
-        service = _match_service(cname)
-        if service:
-            candidates.append((host, cname, service))
+            no_cname_count += 1
+        else:
+            service = _match_service(cname)
+            if service:
+                candidates.append((host, cname, service))
+        if i % 500 == 0 or i == total:
+            print(f"[*] CNAME resolution progress: {i}/{total} hosts checked, "
+                  f"{len(candidates)} candidate(s) so far")
 
-    print(f"[*] {len(hosts)} subdomains checked, {len(candidates)} candidate(s) with a matching third-party CNAME")
+    print(f"[*] {total} subdomains checked ({no_cname_count} had no resolvable CNAME), "
+          f"{len(candidates)} candidate(s) with a matching third-party CNAME")
 
     results = []
     for host, cname, service in candidates:
